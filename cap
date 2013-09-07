@@ -1,26 +1,48 @@
+#!bash
+_find_capfile()
+{
+    dir=$PWD
+    while [[ "$dir" != "/" ]]; do
+        if [ -f $dir/Capfile ]; then
+            echo $dir/Capfile
+            return 0
+        fi
+        dir=$(dirname $dir)
+    done
+    return 1
+}
+
+_cap_tasks()
+{
+    echo $(cap -T|grep -e '^cap'|awk {'print $2'}|sed 's/:/\:/g')
+}
 _cap()
 {
     COMPREPLY=()
-
+    # don't consider a ":" a wordbreak - this lets us complete on "cap foo:*"
+    COMP_WORDBREAKS=${COMP_WORDBREAKS//:}
     local cur prev
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    if [ ! -f ./Capfile ];
-    then
-        return
-    fi
+    # our _cap_task output is good if we're 1) in the same directory as the last
+    # time we ran it or 2) we're using the same Capfile as the last time we ran
+    # it. so check for those first before we re-run "cap -T" since that's pretty
+    # expensive time-wise.
+    new_cwd=$PWD
+    if [[ "$cur_cwd" != "$new_cwd" ||  -z "$cap_tasks" ]]; then
+       new_capfile=$(_find_capfile)
+       if [ $? == 1 ]; then
+           # no Capfile found, bail
+           return 0
+       fi
 
-    local opts
-    opts=`cap -T | awk 'BEGIN {x=1}; $x>1 { if($1=="cap") { print $2}}'`
-    optscolon=${cur%"${cur##*:}"}
-
-    COMPREPLY=( $(compgen -W "${opts}"  -- ${cur}))
-
-    local i=${#COMPREPLY[*]}
-    while [ $((--i)) -ge 0 ]; do
-        COMPREPLY[$i]=${COMPREPLY[$i]#"$optscolon"}
-    done
+       if [ "$new_capfile" != "$cur_capfile" ]; then
+           cur_capfile=$new_capfile
+           cap_tasks=$(_cap_tasks)
+       fi
+   fi
+   COMPREPLY=( $(compgen -W "${cap_tasks}"  -- ${cur}))
 }
 
 complete -F _cap cap
